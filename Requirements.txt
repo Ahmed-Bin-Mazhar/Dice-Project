@@ -1,0 +1,15 @@
+pandas
+matplotlib
+seaborn
+SQLAlchemy
+typing_extensions
+pydantic
+langchain-core
+langgraph
+langchain-groq
+pymysql
+fastapi
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+streamlit
+langchain_community
