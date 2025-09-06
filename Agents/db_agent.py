@@ -1,8 +1,9 @@
-from typing import Dict
-from sqlalchemy import create_engine, text
+from typing import Dict, List
+from sqlalchemy import create_engine, inspect, text
 from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
+from langchain.schema import StrOutputParser
 
 # -----------------------------
 # Database setup
@@ -22,40 +23,67 @@ class ConvertToSQL(BaseModel):
     sql_query: str = Field(description="SQL query generated from the user's natural language question.")
 
 # -----------------------------
-# Hardcoded table/column info
+# Schema tools
 # -----------------------------
-description = {
-    "Gender": "The gender of the customer, typically Male or Female.",
-    "Age": "The age of the customer in completed years.",
-    "first_name": "First of the customer.",
-    "last_name": "First of the customer.",
-    "Address": "Residential address including city and postal code.",
-    "Email": "Customer email for communication.",
-    "Complaint": "Detailed description of the reported issue.",
-    "Security Question": "Pre-selected security question for identity verification.",
-    "Security Answer": "Answer to the security question.",
-    "Complaint Resolved": "Indicates if the complaint was resolved (Yes/No)."
+def get_table_names() -> List[str]:
+    inspector = inspect(engine)
+    return inspector.get_table_names()
+
+def get_columns(table_name: str) -> Dict[str, str]:
+    inspector = inspect(engine)
+    return {col["name"]: str(col["type"]) for col in inspector.get_columns(table_name)}
+
+def get_schema_text(table_name: str) -> str:
+    cols = get_columns(table_name)
+    return "\n".join([f'- "{col}" {ctype}' for col, ctype in cols.items()])
+
+# -----------------------------
+# Question Regeneration / Enrichment
+# -----------------------------
+SYNONYMS = {
+    "Pakistan": ["Pakistan", "PK", "PAK"],
+    "United Kingdom": ["United Kingdom", "UK", "GB"]
 }
+
+def regenerate_question(question: str) -> str:
+    """Expand question with known synonyms and abbreviations."""
+    for key, variants in SYNONYMS.items():
+        if key.lower() in question.lower():
+            variants_str = " or ".join(variants)
+            question = question.replace(key, variants_str)
+    return question
 
 # -----------------------------
 # DB Agent
 # -----------------------------
 def run_db_agent(question: str) -> Dict:
-    state: Dict = {"question": question, "sql_error": False, "query_rows": [], "query_result": ""}
+    state: Dict = {
+        "question": question,
+        "sql_query": "",
+        "sql_error": False,
+        "query_rows": [],
+        "query_result": "",
+        "answer": "",
+    }
 
-    # 1️⃣ Convert NL question to SQL
+    # 1️⃣ Regenerate question
+    enriched_question = regenerate_question(question)
+    state["question"] = enriched_question
+    print(f"[DB Agent] Enriched question: {enriched_question}")
+
+    # 2️⃣ Generate SQL
     try:
-        cols_block = "\n".join([f'- "{col}" {desc}' for col, desc in description.items()])
+        table_name = "customer_complaints"
+        cols_block = get_schema_text(table_name)
         system_prompt = f"""
 You are an assistant that converts natural language questions into SQL queries.
-Database: "customer_complaints"
-Table: "customer_complaints"
+Database: "{table_name}"
 Columns:
 {cols_block}
 
 Rules:
 - Provide ONLY the SQL query, no explanations.
-- Do not modify column names.
+- Use LIKE statements for partial matches if needed.
 """
         convert_prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
@@ -63,14 +91,17 @@ Rules:
         ])
         structured_llm = groq_llm.with_structured_output(ConvertToSQL)
         sql_generator = convert_prompt | structured_llm
-        result = sql_generator.invoke({"question": question})
+        result = sql_generator.invoke({"question": enriched_question})
         sql_query = result.sql_query
         state["sql_query"] = sql_query
         print(f"[DB Agent] Generated SQL: {sql_query}")
     except Exception as e:
-        return {"route": "db", "ok": False, "answer": f"Failed to generate SQL: {e}"}
+        state["sql_error"] = True
+        state["query_result"] = f"Failed to generate SQL: {e}"
+        state["answer"] = state["query_result"]
+        return {"route": "db", "ok": False, **state}
 
-    # 2️⃣ Execute SQL
+    # 3️⃣ Execute SQL
     try:
         with engine.connect() as conn:
             res = conn.execute(text(sql_query))
@@ -91,25 +122,26 @@ Rules:
     except Exception as e:
         state["query_result"] = f"Error executing SQL: {e}"
         state["sql_error"] = True
+        state["answer"] = state["query_result"]
+        return {"route": "db", "ok": False, **state}
 
-    # 3️⃣ Human-readable summary (optional)
-    if not state["sql_error"] and sql_query.strip().lower().startswith("select"):
-        system_summary = """
-You are a professional analyst. Convert SQL results into a concise, executive summary.
-Focus on trends, metrics, and actionable insights.
+    # 4️⃣ Human-readable summary
+    try:
+        if state["query_rows"]:
+            system_summary = """
+You are a professional analyst. Convert SQL results into a narrative, story-like, executive summary.
+Highlight key patterns, trends, duplicates, and actionable insights.
 """
-        human_msg = f"SQL Query:\n{sql_query}\nResult:\n{state['query_result']}"
-        summary_prompt = ChatPromptTemplate.from_messages([
-            ("system", system_summary),
-            ("human", human_msg)
-        ])
-        try:
-            from langchain_core.schema import StrOutputParser
+            human_msg = f"SQL Query:\n{sql_query}\nResult:\n{state['query_result']}"
+            summary_prompt = ChatPromptTemplate.from_messages([
+                ("system", system_summary),
+                ("human", human_msg)
+            ])
             summary_llm = summary_prompt | groq_llm | StrOutputParser()
             state["answer"] = summary_llm.invoke({})
-        except Exception:
+        else:
             state["answer"] = state["query_result"]
-    else:
+    except Exception as e:
         state["answer"] = state["query_result"]
 
     return {"route": "db", "ok": True, **state}
