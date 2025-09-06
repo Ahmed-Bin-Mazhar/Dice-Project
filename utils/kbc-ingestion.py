@@ -3,7 +3,7 @@ import uuid
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import JSONResponse
-
+from pydantic import BaseModel
 import pinecone
 from langchain_groq import ChatGroq
 from langchain.chains import RetrievalQA
@@ -15,6 +15,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 # Load environment variables
 load_dotenv()
 
+class QueryRequest(BaseModel):
+    query: str
 
 # Set environment variables (replace with your own keys)
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HUGGINGFACEHUB_API_TOKEN")
@@ -102,8 +104,25 @@ async def upload_file(file: UploadFile = File(...)):
 
 # POST endpoint to query Pinecone (form-data version)
 @app.post("/chatbot")
-async def query_vectorstore(query: str = Form(...)):
+# async def query_vectorstore(query: str = Form(...)):
+#     try:
+#         if not query:
+#             raise HTTPException(
+#                 status_code=400, detail="Missing 'query' in request body"
+#             )
+
+#         # Set up QA chain
+#         qa = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
+
+#         result = qa.invoke({"query": query})
+
+#         return JSONResponse(content={"results": result["result"]})
+
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+async def query_vectorstore(request: QueryRequest):
     try:
+        query = request.query
         if not query:
             raise HTTPException(
                 status_code=400, detail="Missing 'query' in request body"
