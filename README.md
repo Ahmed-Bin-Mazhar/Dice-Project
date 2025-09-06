@@ -41,19 +41,19 @@ This repository contains a knowledge base and database chatbot powered by FastAP
 ```bash
 git clone https://github.com/your-username/db-kb-chatbot.git
 cd db-kb-chatbot
+```
 
-
-### 2️⃣ Create a Virtual Environment
+###2️⃣ Create a Virtual Environment
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
-
+```
 
 ###3️⃣ Install Dependencies
 ```bash
 pip install -r requirements.txt
-
+```
 ###Environment Variables
 Create a .env file in the root folder and add your API keys:
 ```env
@@ -61,7 +61,7 @@ HUGGINGFACEHUB_API_TOKEN=your_huggingface_token
 PINECONE_API_KEY=your_pinecone_api_key
 INDEX_NAME=gen-ai
 GROQ_API_KEY=your_groq_api_key
-
+```
 ###Running the Project
 Use the run_all.py script to start both FastAPI and Streamlit:
 
@@ -70,10 +70,10 @@ python run_all.py
 FastAPI runs at: http://localhost:8000
 
 Streamlit runs at: http://localhost:8501
-
+```
 ###File Upload
 ```Upload PDF, DOCX, or TXT files via the sidebar. Files are processed, split into chunks, embedded, and added to Pinecone.
-
+```
 ###Project Structure
 ```text
 .
@@ -90,7 +90,7 @@ Streamlit runs at: http://localhost:8501
 ├── customer_complaints.db     # SQLite database
 ├── requirements.txt           # Python dependencies
 └── README.md                  # This file
-
+```
 
 ###Requirements
 ```requirements.txt:
@@ -123,7 +123,7 @@ langchain_groq
 werkzeug
 python-multipart
 
-
+```
 ###Notes
 ```note
 The FastAPI server must be running before using the Streamlit interface
@@ -131,11 +131,12 @@ The FastAPI server must be running before using the Streamlit interface
 Only PDF files are supported for ingestion in the current implementation
 
 Groq LLM (llama-3.3-70b-versatile) is used for generating SQL queries and summarizing results
-
+```
 ###License
 ```lisence
 This project is licensed under the MIT License.
-
+```
 ```text
 
 You can save this content to a file named `README.md` in your project's root directory. This comprehensive documentation will help users understand and use your chatbot project effectively.
+```
